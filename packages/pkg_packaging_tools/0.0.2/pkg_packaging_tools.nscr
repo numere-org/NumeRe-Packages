@@ -1,0 +1,546 @@
+#***************************************************************************************************
+ * SCRIPTNAME: pkg_packaging_tools 
+ * =================================================================================================
+ * Hinzugefügt: 2026-06-30, um 09:47:27 *#
+
+##~ Füge hier deine Kommandos und Ausdrücke ein.
+<install>
+	<info>
+		-name="Packaging Tools"
+		-author="Erik Hänel"
+		-version="0.0.2"
+		-type=TYPE_PACKAGE
+		-license="Apache-2.0"
+		-desc="Provides tools to simplify the release process to the official repository during the package creation. It contains also a solution for a simplified package submission via the GitHub REST API. You still need a valid AuthToken, though. The link for the generation of the auth token can be found in the procedure docstring for $packaging~submit()"
+		-keywords="Release, Package, Repository, Submission"
+		-changelog="2026-03-30 v0.0.2: Submission automation\n  + Added tools for fork and branch creation\n  + Added tools for automatic PR submission\n\n2026-06-10 v0.0.1: Initial version\n  - Provides a procedure for manifest cration\n  - Provides a procedure for copying a package to the correct folder structure"
+		-flags=ENABLE_DEFAULTS
+		-requirepackages="pkg_tools"
+		-requireversion="1.1.8.2605"
+	<endinfo>
+
+	<file name="<procpath>/packaging/prepareRelease.nprc">
+		#***************************************************************************************************
+		* NUMERE-PROZEDUR: $prepareRelease()
+		* =================================================================================================
+		* Hinzugefügt: 2026-06-19, um 13:57:41 *#
+		
+		##! \procedure prepareRelease
+		##! Prepares a package release by copying the package file to the correct folder in the package 
+		##! repository and by creating the necessary manifest meta.json
+		##!
+		##! \param _sPackageFile  The package file path (from where it shall be copied)
+		##! \param _sRepoRoot  The repository root folder, where your fork lives in (to where the package 
+		##! shall by copied to)
+		##! \return STR  The package path in the repository
+		procedure $prepareRelease(_sPackageFile, _sRepoRoot) :: explicit mask
+			str sFileContents, sVersion, sFileParts = getfileparts(_sPackageFile), sReleasePath
+			var nInfoSection
+			
+			## Check, whether the filetype is fitting
+			if (sFileParts[4] != "nscr")
+				throw "The to-be-released file \"" + _sPackageFile + "\" does not have the correct file type."
+			endif
+			
+			## Ensure that the repository root points to a reasonable directory
+			if (!locate(getfolderlist(_sRepoRoot), "packages"))
+				throw "The repository root does not seem to be the correct folder. Please ensure that it points to the folder, where the folder \"packages\" is located."
+			endif
+			
+			## Read the contents of the package file and identify the info section
+			sFileContents = read _sPackageFile -set comments={"##", "#*", "*#"};
+			nInfoSection = locate(sFileContents, {"<info>", "<endinfo>"}, 4);
+			
+			## Extract the info section as a joined string (makes it easier to extract things)
+			sFileContents = strjoin(sFileContents[nInfoSection[1]:nInfoSection[2]], " ");
+			
+			## Get the file version
+			sVersion = getopt(sFileContents, findparam("version", sFileContents, "=") + 7 + 1);
+			
+			## Make a quick check for non-utf8-encodings
+			if (sVersion.nmtch("0123456789."))
+				throw "Something is wrong with the package file. Probably the file encoding is incorrect."
+			endif
+			
+			## Create the release path
+			sReleasePath = _sRepoRoot + "/packages/" + sFileParts[3] + "/" + sVersion + "/";
+			
+			## Copy the package file
+			copy _sPackageFile -target=sReleasePath + "*"
+			
+			## Create the necessary manifest file
+			$this~createMeta(sReleasePath + sFileParts[3] + "." + sFileParts[4]);
+			
+			## Return the deployed path
+			return sReleasePath;
+		endprocedure
+		
+		##~ Ergänze hier weitere lokale Prozeduren
+		
+		
+		#**Ende der Datei
+		* NumeRe: Framework für Numerische Rechnungen | Freie numerische Software unter der GNU GPL v3
+		* https://www.numere.org/
+		**************************************************************************************************#
+		
+	<endfile>
+
+	<file name="<procpath>/packaging/createMeta.nprc">
+		#***************************************************************************************************
+		* NUMERE-PROZEDUR: $createMeta()
+		* =================================================================================================
+		* Hinzugefügt: 2026-06-19, um 13:07:27 *#
+		
+		##! \procedure createMeta
+		##! Creates the meta.json manifest file for the respective package file.
+		##! \remark The meta.json file is created in the same directory and will overwrite existing ones.
+		##!
+		##! \param _sPackageFile  The file path to the package file
+		procedure $createMeta(_sPackageFile) :: explicit mask
+			obj oPath = path(_sPackageFile), oMeta = dictstruct("manifest-version", "1.0.0")
+			str sFileContents
+			var nInfoSection, nPos
+			
+			## Read the contents of the package file and identify the info section
+			sFileContents = read _sPackageFile -set comments={"##", "#*", "*#"};
+			nInfoSection = locate(sFileContents, {"<info>", "<endinfo>"}, 4);
+			
+			## Extract the info section as a joined string (makes it easier to extract things)
+			sFileContents = strjoin(sFileContents[nInfoSection[1]:nInfoSection[2]], " ");
+			
+			## Extract major parameters
+			$thisfile~extractField(oMeta, sFileContents, "name", "name");
+			$thisfile~extractField(oMeta, sFileContents, "author", "author");
+			$thisfile~extractField(oMeta, sFileContents, "license", "license");
+			$thisfile~extractField(oMeta, sFileContents, "description", "desc");
+			$thisfile~extractField(oMeta, sFileContents, "keywords", "keywords");
+			$thisfile~extractField(oMeta, sFileContents, "changelog", "changelog");
+			
+			## The requirements are nested and will therefore be extracted differently
+			if (nPos = findparam("requireversion", sFileContents, "="))
+				oMeta.insertkey("requirements" / "version", getopt(sFileContents, nPos+14+1));
+			endif
+			
+			if (nPos = findparam("requirepackages", sFileContents, "="))
+				oMeta.insertkey("requirements" / "packages", getopt(sFileContents, nPos+15+1));
+			endif
+			
+			## Format the resulting dictstruct as JSON and save it to the target file
+			write oMeta.encodejson(true) -set file=oPath.leafless.format("/") + "/meta.json"
+			
+			return void;
+		endprocedure
+		
+		
+		##! \procedure extractField
+		##! Extracts the data from a single field.
+		##!
+		##! \param _oMeta&  The target meta dictstruct
+		##! \param _sFileContents&  The info section of the package file
+		##! \param _sMetaName  The field name in the meta dictstruct
+		##! \param _sInstallerName  The field name in the package file
+		procedure $extractField(_oMeta&, _sFileContents&, _sMetaName, _sInstallerName) :: explicit mask inline
+			var nPos
+			
+			if (nPos = findparam(_sInstallerName, _sFileContents, "="))
+				_oMeta.insertkey(_sMetaName, replaceall(replaceall(getopt(_sFileContents, nPos+_sInstallerName.len+1), "\ \"", "\"" ), "\\n", "\n"));
+			endif
+			
+			return void;
+		endprocedure
+		
+		
+		#**Ende der Datei
+		* NumeRe: Framework für Numerische Rechnungen | Freie numerische Software unter der GNU GPL v3
+		* https://www.numere.org/
+		**************************************************************************************************#
+		
+	<endfile>
+
+	<file name="<procpath>/packaging/getToken.nprc">
+		#***************************************************************************************************
+		* NUMERE-PROZEDUR: $getToken()
+		* =================================================================================================
+		* Hinzugefügt: 2026-06-25, um 13:21:17 *#
+		
+		declare sTOKENFILE := "<this>/tokenfile.txt"
+		
+		##! \procedure getToken
+		##! Returns the user token from the token file. If the file does not exist, the user is prompted 
+		##! for the token, which is then stored in the token file and returned afterwards.
+		##!
+		##! \return STR  The user token
+		procedure $getToken() :: explicit mask private
+			str sToken
+			
+			## Try to find the token file and create it, if necessary
+			if (!findfile(sTOKENFILE))
+				sToken = dialog "" -set type=textentry msg="Provide a GitHub access token with Repository write access" title="Provide a token";
+				write sToken -set file=sTOKENFILE;
+			else
+				sToken = read sTOKENFILE;
+			endif
+			
+			return sToken;
+		endprocedure
+		
+		##~ Ergänze hier weitere lokale Prozeduren
+		
+		
+		#**Ende der Datei
+		* NumeRe: Framework für Numerische Rechnungen | Freie numerische Software unter der GNU GPL v3
+		* https://www.numere.org/
+		**************************************************************************************************#
+		
+	<endfile>
+
+	<file name="<procpath>/packaging/performRelease.nprc">
+		#***************************************************************************************************
+		* NUMERE-PROZEDUR: $performRelease()
+		* =================================================================================================
+		* Hinzugefügt: 2026-06-25, um 13:37:54 *#
+		
+		declare sREPOSITORYNAME := "numere-org/NumeRe-Packages"
+		declare sPRTEMPLATE := "## Description\\nAdds package '{1}' version {2}.\\n\\n## Checklist\\n\\n- [ ] Read the [Contribution Guideline](https://github.com/numere-org/NumeRe-Packages/blob/main/CONTRIBUTING.md)\\n- [ ] Linked to an issue (if applicable)\\n    - Resolves #[Issue Number] <!-- Example: Resolves #328283 -->\\n- [ ] This PR only modifies one (1) package\\n- [ ] Tested package install locally with `install {3}`\\n- [ ] The meta.json conforms to the 1.0.0 standard"
+		
+		##! \procedure performRelease
+		##! Performs a release via GitHub without the need of manually creating a fork, cloning it, 
+		##! committing the new files and creating the pull request. All those tasks are created 
+		##! automatically. Major requirements are:
+		##! 1. The release files are already in a package repository structure. This can be achieved by 
+		##!    calling !!$packaging~prepareRelease()!!
+		##! 2. The user owns a GitHub access token with Repo write access.
+		##!
+		##! \param _sPackageFiles  An string array containing the package files, which shall be added to 
+		##! the pull request
+		##! \return STR  The pull request URL in case of success
+		procedure $performRelease(_sPackageFiles) :: explicit mask
+			str sUserId, sUserReposUrl, sAuthToken, sForkUrl, sBranchName, sVersion, sPackageId
+			obj oPath = path(_sPackageFiles), oMeta, oLogger = logger("<this>/perform_release.log")
+			
+			oLogger.info(to_uppercase("Starting the release process for " + strjoin(_sPackageFiles, ", ")));
+			oLogger.info("Extracting meta information.");
+			
+			try
+				## Extract the package meta from the meta file as well as the package ID from the actual 
+				## package file
+				if (oPath[1].leaf != "meta.json")
+					oLogger.debug("Package file: " + #oPath[1]);
+					oLogger.debug("Meta file: " + #oPath[2]);
+					sPackageId = oPath[1].leaf;
+					oMeta = readjson(oPath[2]);
+				else
+					oLogger.debug("Package file: " + #oPath[2]);
+					oLogger.debug("Meta file: " + #oPath[1]);
+					sPackageId = oPath[2].leaf;
+					oMeta = readjson(oPath[1]);
+				endif
+				
+				## We have to remove the trailing filename extension to obtain the actual package ID
+				sPackageId = sPackageId.sub(1, sPackageId.rfnd(".")-1);
+				oLogger.info("Extracted package ID: " + sPackageId);
+				
+				## Get the package version and synthesise a fitting branch name
+				sVersion = oPath[1].twig;
+				oLogger.info("Extracted version: " + sVersion);
+				
+				sBranchName = "add_" + sPackageId + "_" + sVersion;
+				oLogger.debug("Created branch name: " + sBranchName);
+				
+				oLogger.info("Reading the user's token.");
+				## Get the user's access token
+				sAuthToken = $this~getToken();
+				
+				if (!sAuthToken)
+					throw "The user's auth token is empty.";
+				endif
+				
+				oLogger.info("Get user information from GitHub.");
+				## Get the user information from GitHub
+				{sUserId, sUserReposUrl} = $thisfile~getUser(sAuthToken);
+				oLogger.info("User ID: " + sUserId);
+				oLogger.info("User repos URL: " + sUserReposUrl);
+				
+				oLogger.info("Find or create the fork of the central package repository.");
+				## Find or create a new fork of the package repo. This can potentially be cached to reduce the 
+				## number of API requests in total
+				sForkUrl = $thisfile~findOrCreateFork(sUserReposUrl, sAuthToken, oLogger);
+				oLogger.info("Fork URL: " + sForkUrl);
+				
+				oLogger.info("Create a new branch: " + sBranchName);
+				## Create a branch for the new file
+				$thisfile~createBranch(sForkUrl, sAuthToken, sBranchName, oLogger);
+				
+				oLogger.info("Add the files " + strjoin(_sPackageFiles, ", ") + " to the created branch.");
+				## Add the files to the branch
+				$thisfile~addFilesToBranch(sForkUrl, sAuthToken, sBranchName, _sPackageFiles, \\
+				sPackageId + " v" + sVersion, oLogger);
+				
+				oLogger.info("Create the pull request");
+				## Create the pull request on the user's behalf
+				return $thisfile~createPullRequest(sAuthToken, sUserId, sBranchName, "New Package: " + sPackageId + " v" + sVersion, \\
+				$tools~strings~format(sPRTEMPLATE, {oMeta.DOM.name, sVersion, sPackageId}), oLogger);
+			catch:
+				oLogger.error(getlasterror().sel(2));
+				rethrow;
+			endtry
+			
+			return ""
+		endprocedure
+		
+		
+		##! \procedure getUser
+		##! Obtains the user and repo url information from GitHub.
+		##!
+		##! \param _sAuthToken  The auth token provided by the user previously.
+		##! \return STR  The user ID
+		##! \return STR  The user repositories url for the REST API
+		procedure $getUser(_sAuthToken) :: explicit mask
+			str sResponse
+			obj oUserJson = dictstruct()
+			
+			## Get the user information from the REST API
+			sResponse = url "https://api.github.com/user" -set header="Authorization: Bearer " + _sAuthToken;
+			
+			## Decode the string response into an DictStruct
+			oUserJson.decodejson(sResponse);
+			
+			## Return the user ID and their repository url
+			return oUserJson.DOM.at({"login", "repos_url"});
+		endprocedure
+		
+		
+		##! \procedure findOrCreateFork
+		##! Finds the correct fork in the user's repositories or creates a new one.
+		##!
+		##! \param _sRepoUrl  The user's repository url
+		##! \param _sAuthToken  The auth token provided by the user previously.
+		##! \param _oLogger&  The central logger instance
+		##! \return STR  The forks URL
+		procedure $findOrCreateFork(_sRepoUrl, _sAuthToken, _oLogger&) :: explicit mask
+			str sResponse
+			obj oRepoJson = dictstruct(), oForkJson = dictstruct()
+			
+			## Get all user repositories
+			sResponse = url _sRepoUrl -set header="Authorization: Bearer " + _sAuthToken;
+			
+			## Decode the JSON string response into a DictStruct instance
+			oRepoJson.decodejson(sResponse);
+			
+			## Search for a fitting fork within the user's repositories
+			for (oCurrRepo -> oRepoJson.DOM)
+				if (oCurrRepo.fork)
+					_oLogger.debug("Found a fork: " + oCurrRepo.full_name + ". Getting the full repository information ...");
+					## If this is a fork, obtain the full repository information
+					sResponse = url oCurrRepo.url -set header="Authorization: Bearer " + _sAuthToken;
+					
+					## Decode the JSON string response into a DictStruct instance
+					oForkJson.decodejson(sResponse);
+					
+					_oLogger.debug("The source repository of this fork is: " + oForkJson.DOM.source.full_name);
+					
+					## The original repository (the fork source) can be found in the source section
+					if (to_lowercase(oForkJson.DOM.source.full_name) == to_lowercase(sREPOSITORYNAME))
+						_oLogger.info("Found a matching fork. Trying to sync the main branch.");
+						## Try to sync the fork with the source repository
+						try
+							url oCurrRepo.url + "/merge-upstream" -set header="Authorization: Bearer " + _sAuthToken payload="{\"branch\":\"main\"}";
+						catch:
+							_oLogger.error(getlasterror().sel(2));
+							warn getlasterror().sel(2)
+						endtry
+						
+						## Return the URL of the found fork
+						return oCurrRepo.url;
+					endif
+				endif
+			endfor
+			
+			_oLogger.info("No matching fork found. Creating a new one in the user's space.");
+			
+			## Nothing has been found: create a fork
+			sResponse = url "https://api.github.com/repos/" + sREPOSITORYNAME + "/forks" \\
+			-set header="Authorization: Bearer " + _sAuthToken \\
+			payload="{\"name\":\"NumeRe-Packages\",\"default_branch_only\":true}";
+			
+			## Decode the JSON string response into a DictStruct instance
+			oRepoJson.decodejson(sResponse);
+			_oLogger.info("Fork created at: " + oRepoJson.DOM.url + ". Waiting for completion ...");
+			
+			## Creating a fork may take some time, therefore we wait here for a few millisecs
+			sleep(1000);
+			
+			## Return the URL of the newly created fork
+			return oRepoJson.DOM.url;
+		endprocedure
+		
+		
+		##! \procedure createBranch
+		##! Create a branch for the new package. The branch name features the package name, making it 
+		##! (hopefully) unique.
+		##!
+		##! \param _sForkUrl  The URL of the forked repository
+		##! \param _sAuthToken  The auth token provided by the user previously.
+		##! \param _sBranchName  The desired branch name
+		##! \param _oLogger&  The central logger instance
+		procedure $createBranch(_sForkUrl, _sAuthToken, _sBranchName, _oLogger&) :: explicit mask
+			str sResponse, sSha
+			obj oJson = dictstruct()
+			
+			_oLogger.debug("Obtaining the SHA of main/HEAD ...");
+			
+			## Get the head SHA
+			sResponse = url _sForkUrl + "/git/ref/heads/main" -set header="Authorization: Bearer " + _sAuthToken;
+			
+			## Decode the JSON string response into a DictStruct instance
+			oJson.decodejson(sResponse);
+			
+			## Extract the main HEAD SHA
+			sSha = oJson.DOM.object.sha;
+			
+			_oLogger.info("SHA of main/HEAD: " + sSha);
+			
+			## Create branch from the HEAD
+			sResponse = url _sForkUrl + "/git/refs" -set header="Authorization: Bearer " + _sAuthToken \\
+			payload="{\"ref\":\"refs/heads/" + _sBranchName +"\",\"sha\":\"" + sSha + "\"}";
+			_oLogger.info("Branch '" + _sBranchName + "' created.");
+			
+			return void;
+		endprocedure
+		
+		
+		##! \procedure addFilesToBranch
+		##! Adds the required files to the newly created branch.
+		##!
+		##! \param _sForkUrl  The forked repo's URL
+		##! \param _sAuthToken  The auth token provided by the user previously.
+		##! \param _sBranchName  The branch name
+		##! \param _sFilePaths  An string array containing the package files, which shall be added to the 
+		##! pull request 
+		##! \param _sCommitMessage  The commit message to be added to each commit
+		##! \param _oLogger&  The central logger instance
+		procedure $addFilesToBranch(_sForkUrl, _sAuthToken, _sBranchName, _sFilePaths, _sCommitMessage, _oLogger&) :: explicit mask
+			str sResponse
+			obj oDict = dictstruct()
+			
+			## Commit each file separately (the only way supported by this REST API)
+			for (sFilePath -> _sFilePaths)
+				_oLogger.info("Committing " + sFilePath);
+				sResponse = url "PUT " + _sForkUrl + "/contents" + sFilePath.sub(sFilePath.fnd("/packages/")) \\
+				-set header="Authorization: Bearer " + _sAuthToken payload="{\"message\":\"" + _sCommitMessage + " / File: " + path(sFilePath).leaf \\
+				+ "\",\"branch\":\"" + _sBranchName + "\",\"content\":\"" + encode_base_n(sFilePath, true) + "\"}";
+				
+				## Decode the JSON string response into a DictStruct instance
+				oDict.decodejson(sResponse);
+				
+				## Add a message to the logfile
+				_oLogger.info("Committed as: " + oDict.DOM.commit.message);
+			endfor
+			
+			return void;
+		endprocedure
+		
+		
+		##! \procedure createPullRequest
+		##! Creates a pull request containing the new package, which shall be merged by the central package 
+		##! repository.
+		##!
+		##! \param _sAuthToken  The auth token provided by the user previously.
+		##! \param _sUserId  The user's ID
+		##! \param _sBranchName  The branch name
+		##! \param _sPrTitle  The title of the PR. Shall contain package and version
+		##! \param _sPrMessage  The message body of the PR
+		##! \param _oLogger&  The central logger instance
+		##! \return STR  The URL of the new pull request
+		procedure $createPullRequest(_sAuthToken, _sUserId, _sBranchName, _sPrTitle, _sPrMessage, _oLogger&) :: explicit mask
+			str sResponse
+			obj oDict = dictstruct()
+			
+			_oLogger.info("Creating PR with title=" + _sPrTitle + " and message=" + _sPrMessage);
+			
+			## Create the pull request from the fork into the central package repository using the defined 
+			## pull request title and the message
+			sResponse = url "https://api.github.com/repos/" + sREPOSITORYNAME + "/pulls" \\
+			-set header="Authorization: Bearer " + _sAuthToken payload="{\"title\":\"" + _sPrTitle + "\", \"body\": \"" \\
+			+ _sPrMessage + "\",\"head\":\"" + _sUserId + ":" + _sBranchName \\
+			+ "\", \"base\": \"main\", \"maintainer_can_modify\": true}";
+			
+			## Decode the JSON string response into a DictStruct instance
+			oDict.decodejson(sResponse);
+			
+			_oLogger.info("Pull request created at: " + oDict.DOM.html_url);
+			
+			## Return the URL of the new pull request so that the user may review it
+			return oDict.DOM.html_url;
+		endprocedure
+		
+		#**Ende der Datei
+		* NumeRe: Framework für Numerische Rechnungen | Freie numerische Software unter der GNU GPL v3
+		* https://www.numere.org/
+		**************************************************************************************************#
+		
+	<endfile>
+
+	<file name="<procpath>/packaging/submit.nprc">
+		#***************************************************************************************************
+		* NUMERE-PROZEDUR: $submit()
+		* =================================================================================================
+		* Hinzugefügt: 2026-06-29, um 20:08:14 *#
+		
+		##! \procedure submit
+		##! Automates the complete submission process of a package into the central package repository at 
+		##! GitHub. Although Git is not required during this process (everything will be done via REST), 
+		##! the user must still have an account at GitHub and provide the code an auth token during 
+		##! execution. Visit https://github.com/settings/tokens/new?description=NumeRe-Packages&scopes=repo&default_expires_at=none 
+		##! to create a fitting token.
+		##!
+		##! \param _sPackageFile  The package file to be released
+		##! \param _sRepoRoot  (!!="<>/remotes/packaging-submit"!!) The repository root folder to be used 
+		##! as "file buffer". Defaults to an internal folder but can be any folder the user likes
+		##! \return STR  The PR URL in case of success. Will also try to open the PR in the browser
+		procedure $submit(_sPackageFile, _sRepoRoot = "<>/remotes/packaging-submit") :: explicit mask
+			str sSubmitFolder, sPullRequestUrl
+			var isExecuteEnabled = false
+			
+			## Prepare the target folder and obtain the enabled setting for the execute command
+			new -dir=_sRepoRoot + "/packages";
+			isExecuteEnabled = get enableexecute -asval;
+			
+			## Prepare the necessary files with the correct structure within the "file buffer" directory
+			print "Preparing files for release ..."
+			sSubmitFolder = $this~prepareRelease(_sPackageFile, _sRepoRoot);
+			print "Done."
+			
+			## Talk to the GitHub API, create a frok (if necessary), create a branch, commit the files and 
+			## create the pull request for this submission
+			print "Submitting files for release ..."
+			sPullRequestUrl = $this~performRelease(getfilelist(sSubmitFolder + "*", true));
+			print "Done."
+			
+			## If execute is enabled, we can open the PR in the browser
+			if (isExecuteEnabled)
+				execute sPullRequestUrl
+			endif
+			
+			## Return the URL of the pull request
+			return sPullRequestUrl;
+		endprocedure
+		
+		
+		#**Ende der Datei
+		* NumeRe: Framework für Numerische Rechnungen | Freie numerische Software unter der GNU GPL v3
+		* https://www.numere.org/
+		**************************************************************************************************#
+		
+	<endfile>
+
+	return;
+<endinstall>
+
+warn "Dies ist ein Installations-Script. Um die enthaltenen Prozeduren zu installieren, muss es mit 'install \"<this>/pkg_packaging_tools\"' ausgeführt werden."
+
+
+#**Ende der Datei
+ * NumeRe: Framework für Numerische Rechnungen | Freie numerische Software unter der GNU GPL v3
+ * https://www.numere.org/
+ **************************************************************************************************#
