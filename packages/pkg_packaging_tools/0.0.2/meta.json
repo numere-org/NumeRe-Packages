@@ -1,0 +1,13 @@
+{
+	"author": "Erik Hänel",
+	"changelog": "2026-03-30 v0.0.2: Submission automation\n  + Added tools for fork and branch creation\n  + Added tools for automatic PR submission\n\n2026-06-10 v0.0.1: Initial version\n  - Provides a procedure for manifest cration\n  - Provides a procedure for copying a package to the correct folder structure",
+	"description": "Provides tools to simplify the release process to the official repository during the package creation. It contains also a solution for a simplified package submission via the GitHub REST API. You still need a valid AuthToken, though. The link for the generation of the auth token can be found in the procedure docstring for $packaging~submit()",
+	"keywords": "Release, Package, Repository, Submission",
+	"license": "Apache-2.0",
+	"manifest-version": "1.0.0",
+	"name": "Packaging Tools",
+	"requirements": {
+		"packages": "pkg_tools",
+		"version": "1.1.8.2605"
+	}
+}
