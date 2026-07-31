@@ -7,7 +7,7 @@
 <install>
 	<info>
 		-name="Tools"
-		-author=""
+		-author="Erik Hänel"
 		-version="1.0.9"
 		-type=TYPE_PACKAGE
 		-license="Apache-2.0"

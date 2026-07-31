@@ -22,7 +22,7 @@ This package provides the procedures for submission and release preparation. Eve
 ```
 install plgn_packaging_tools_plugin@NumeRe::Packages
 ```
-It provdes the command `packaging`, with which you can perform a complete submission via
+It provides the command `packaging`, with which you can perform a complete submission via
 ```
 packaging "PACKAGEFILE" -set mode="submit"
 ```

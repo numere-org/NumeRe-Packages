@@ -51,6 +51,7 @@ This section shows the contents of `10_numere_packages.repository`:
     "version": "1.0.0",
     "name": "NumeRe::Packages",
     "url": "https://github.com/numere-org/NumeRe-Packages",
+	"verify-host": true,
     "authentication": {
          "required": false,
          "method": ""
@@ -73,6 +74,7 @@ If you want to host the repository on Gitlab (or a self-hosted instance), then t
     "version": "1.0.0",
     "name": "Gitlab repository",
     "url": "https://gitlab.com/my/Repo",
+	"verify-host": true,
     "authentication": {
          "required": true,
          "method": "PRIVATE-TOKEN: <AUTHTOKEN>"
@@ -96,6 +98,7 @@ The meaning of the fields in a `*.repository` configuration is as follows:
 - `"version"`: defines the version of the `*.repository` file standard by itself. Is used for future compatibility.
 - `"name"`: defines the package name used for uniquely identifying packages via `PKG_ID@name`
 - `"url"`: this is the (browser) URL for the repository. Not used yet
+- `"verify-host"`: Set to `false`, if the host certificate shall not be verified. Might be necessary for inhouse repositories using self-signed certificates
 - `"authentication"`: Defines settings for user authentication
     - `"required"`: Is an authentication required?
     - `"method"`: The HTTP header to be used for authenticating a user. Authenticated users are also less likely to experience a rate limit
