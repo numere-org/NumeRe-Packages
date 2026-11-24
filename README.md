@@ -67,6 +67,9 @@ This section shows the contents of `10_numere_packages.repository`:
 ```
 To add a GitHub-hosted repo, just copy the contents of this JSON, change the three URLs (replace `numere-org/Packages` with the corresponding URL sections for your repository) and adapt the authentication section, if your repo is private, with `"required": true,` and `"method": "Authorization: Bearer ghp_YOURGITHUBTOKEN"`.
 
+#### Codeberg as Host
+The configuration for Codeberg.org is similar to the one for GitHub. Head over to the [Package mirror](https://codeberg.org/numeredev/NumeRe-Packages), where you can find the [repository configuration](https://codeberg.org/numeredev/NumeRe-Packages/src/branch/main/codeberg.repository) for this sample package repository.
+
 #### Gitlab as Host
 If you want to host the repository on Gitlab (or a self-hosted instance), then the following `*.repository` might be a good starting point (this one is a private one):
 ```json
